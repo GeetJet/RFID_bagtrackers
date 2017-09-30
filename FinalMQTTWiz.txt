@@ -1,0 +1,140 @@
+#include "mbed.h"
+#include "MQTTEthernet.h"
+#include "MQTTClient.h"
+#define ECHO_SERVER_PORT   7
+#include "MFRC522.h"
+#define MF_RESET    D9
+#define LED_PIN   A0 
+#include <string.h>
+static int count=0;
+Serial pc(USBTX,USBRX);
+MFRC522    RfChip   (D11, D12, D13, D10, D9);
+DigitalOut myled(A0);
+int arrivedcount = 0;
+ 
+void messageArrived(MQTT::MessageData& md)
+{
+    MQTT::Message &message = md.message;
+    printf("Message arrived: qos %d, retained %d, dup %d, packetid %d\n", message.qos, message.retained, message.dup, message.id);
+    printf("Payload %.*s\n", message.payloadlen, (char*)message.payload);
+    ++arrivedcount;
+}
+
+void baud(int baudrate) {
+    Serial s(USBTX, USBRX);
+    s.baud(baudrate);
+}
+
+int main (void)
+{
+      pc.printf("starting...\n");
+      RfChip.PCD_Init();
+      myled=0;
+  
+    //DHT sensor(D4, DHT11);
+    baud(115200);
+    //printf("Wait a second...\r\n");
+    char* topic = "openhab/parents/command";
+    MQTTEthernet ipstack = MQTTEthernet();
+    
+    MQTT::Client<MQTTEthernet, Countdown> client = MQTT::Client<MQTTEthernet, Countdown>(ipstack);
+    
+    char* hostname = "iot.eclipse.org";
+    int port = 1883;
+    
+    int rc = ipstack.connect(hostname, port);
+    if (rc != 0)
+        printf("rc from TCP connect is %d\n", rc);
+        
+    printf("Topic: %s\r\n",topic);
+    
+    MQTTPacket_connectData data = MQTTPacket_connectData_initializer;       
+    data.MQTTVersion = 3;
+    data.clientID.cstring = "parents";
+
+    if ((rc = client.connect(data)) != 0)
+        printf("rc from MQTT connect is %d\n", rc);
+ 
+    if ((rc = client.subscribe(topic, MQTT::QOS1, messageArrived)) != 0)
+        printf("rc from MQTT subscribe is %d\n", rc); 
+        
+    MQTT::Message message;
+    char buf[100];
+    //int error = 0;
+    //float hum = 0.0f, temp = 0.0f;
+    char h= 'a' ;float temp=0.0f;
+    
+    
+  while (true) {
+        
+    if ( ! RfChip.PICC_IsNewCardPresent())
+    {
+      wait_ms(500);
+      continue;
+    }
+    
+    if ( ! RfChip.PICC_ReadCardSerial())
+    {
+      wait_ms(500);
+      continue;
+    }
+    pc.printf("Card UID: ");
+    for (uint8_t i = 0; i < RfChip.uid.size; i++)
+    {
+      pc.printf(" %d", RfChip.uid.uidByte[i]);
+    }
+    pc.printf("\n\r");
+     uint8_t piccType = RfChip.PICC_GetType(RfChip.uid.sak);
+    pc.printf("PICC Type: %s \n\r", RfChip.PICC_GetTypeName(piccType));
+    if(RfChip.uid.uidByte[0]==97 || RfChip.uid.uidByte[1]==102 || RfChip.uid.uidByte[2]== 176 || RfChip.uid.uidByte[3]== 171)
+    {
+        count=count+1;
+        //pc.printf("%d",count);
+        myled=0;
+        if(count==1)
+        {
+        pc.printf("Successfully received your baggage ..... Going to load in cargo\n");
+        //count=count+1;
+        h='g';
+        }
+        else if(count==2)
+        {
+            pc.printf("Successfully boarded to cargo... Happy Journey :)\n");
+        //count=count+1;
+        h='d';
+        }
+        else if(count==3)
+        {
+        pc.printf("Your baggage has arrived ... Utha lo:>\n");
+        //count=count+1;
+        h='s';
+        }
+        else
+        count=0;     
+    }
+        else 
+        {
+        myled=1;
+        pc.printf("baggage lost...meet the authorities\n");
+        h='w';
+        }
+      wait_ms(1000);
+   
+    
+    
+    //RfChip.PCD_WriteRegister();
+   
+   
+        sprintf(buf, "%c", h);
+        message.qos = MQTT::QOS0;
+        message.retained = false;
+        message.dup = false;
+        message.payload = (void*)buf;
+        message.payloadlen = strlen(buf);
+        rc = client.publish("airport/baggage/tagid", message);
+        
+    }
+    
+        client.yield(60000);
+}
+
