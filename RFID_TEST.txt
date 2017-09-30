@@ -1,0 +1,73 @@
+#include "mbed.h"
+#include "MFRC522.h"
+
+#define MF_RESET    D9
+//#define MF_SS    D10    
+#define LED_PIN   A0 
+static int count=0;
+Serial pc(USBTX,USBRX);
+MFRC522    RfChip   (D11, D12, D13, D10, D9);
+DigitalOut myled(A0); 
+
+int main(void) {
+  pc.printf("starting...\n");
+ 
+  RfChip.PCD_Init();
+  myled=0;
+  
+  while (true) {
+   
+    if ( ! RfChip.PICC_IsNewCardPresent())
+    {
+      wait_ms(500);
+      continue;
+    }
+    
+    if ( ! RfChip.PICC_ReadCardSerial())
+    {
+      wait_ms(500);
+      continue;
+    }
+    pc.printf("Card UID: ");
+    for (uint8_t i = 0; i < RfChip.uid.size; i++)
+    {
+      pc.printf(" %d", RfChip.uid.uidByte[i]);
+    }
+    pc.printf("\n\r");
+     uint8_t piccType = RfChip.PICC_GetType(RfChip.uid.sak);
+    pc.printf("PICC Type: %s \n\r", RfChip.PICC_GetTypeName(piccType));
+    if(RfChip.uid.uidByte[0]==97 || RfChip.uid.uidByte[1]==102 || RfChip.uid.uidByte[2]== 176 || RfChip.uid.uidByte[3]== 171)
+    {
+        count=count+1;
+        //pc.printf("%d",count);
+        myled=0;
+        if(count==1)
+        {
+        pc.printf("Successfully received your baggage ..... Going to load in cargo\n");
+        //count=count+1;
+        }
+        else if(count==2)
+        {
+            pc.printf("Successfully boarded to cargo... Happy Journey :)\n");
+        //count=count+1;
+        }
+        else if(count==3)
+        {
+        pc.printf("Your baggage has arrived ... Utha lo:>\n");
+        //count=count+1;
+        }
+        else
+        count=0;     
+    }
+        else 
+        {
+        myled=1;
+        pc.printf("baggage lost...meet the authorities\n");
+        }
+      wait_ms(1000);
+   
+    
+    
+    //RfChip.PCD_WriteRegister();
+    }
+    }
